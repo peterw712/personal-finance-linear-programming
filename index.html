@@ -1,0 +1,203 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Finance Optimizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+        h1 {
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+        }
+        input {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #3b7ed0;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 2px;
+            cursor: pointer;
+            width: 100%;
+        }
+        #results {
+            display: none;
+        }
+        #ratingError {
+            color: red;
+            display: none;
+        }
+    </style>
+    <script src="https://unpkg.com/glpk.js@2.0.0"></script>
+</head>
+<body>
+    <h1>Personal Finance Optimizer</h1>
+ <div id="inputForm">
+        <label for="income">Enter your total monthly income:</label>
+        <input type="number" id="income" step="100" min="0">
+
+        <label for="fixed_expenses">Enter your fixed monthly expenses:</label>
+        <input type="number" id="fixed_expenses" step="100" min="0">
+
+        <label for="min_savings_goal">Enter your minimum monthly savings goal:</label>
+        <input type="number" id="min_savings_goal" step="100" min="0">
+
+        <label for="min_investment_goal">Enter your minimum monthly investment goal:</label>
+        <input type="number" id="min_investment_goal" step="100" min="0">
+
+        <label for="discretionary_expense_limit">Enter your maximum monthly discretionary expense limit:</label>
+        <input type="number" id="discretionary_expense_limit" step="100" min="0">
+
+        <label for="net_worth">Enter your total net worth:</label>
+        <input type="number" id="net_worth" step="100" min="0">
+
+        <p>Rate the importance of savings, investments, and discretionary expenses on a scale of 1-10. Ratings must add up to 10:</p>
+        <label for="rating_savings">Rating for savings:</label>
+        <input type="number" id="rating_savings" step="1" min="1" max="10">
+
+        <label for="rating_investments">Rating for investments:</label>
+        <input type="number" id="rating_investments" step="1" min="1" max="10">
+
+        <label for="rating_discretionary_expenses">Rating for discretionary expenses:</label>
+        <input type="number" id="rating_discretionary_expenses" step="1" min="1" max="10">
+
+        <p id="ratingError">Error: Ratings must add up to 10.</p>
+
+        <button id="optimizeButton">Optimize</button>
+    </div>
+
+    <div id="results">
+        <h2>Optimal allocation:</h2>
+        <p>Savings: $<span id="savingsResult"></span></p>
+        <p>Investments: $<span id="investmentResult"></span></p>
+        <p>Discretionary Expenses: $<span id="discretionaryResult"></span></p>
+    </div>
+
+
+
+
+<script>
+    document.getElementById("optimizeButton").onclick = function () {
+        const income = parseFloat(document.getElementById("income").value);
+        const fixed_expenses = parseFloat(document.getElementById("fixed_expenses").value);
+        const min_savings_goal = parseFloat(document.getElementById("min_savings_goal").value);
+        const min_investment_goal = parseFloat(document.getElementById("min_investment_goal").value);
+        const discretionary_expense_limit = parseFloat(document.getElementById("discretionary_expense_limit").value);
+        const net_worth = parseFloat(document.getElementById("net_worth").value);
+
+        const rating_savings = parseInt(document.getElementById("rating_savings").value);
+        const rating_investments = parseInt(document.getElementById("rating_investments").value);
+        const rating_discretionary_expenses = parseInt(document.getElementById("rating_discretionary_expenses").value);
+
+        const totalRatings = rating_savings + rating_investments + rating_discretionary_expenses;
+
+        if (totalRatings !== 10) {
+            document.getElementById("ratingError").style.display = "block";
+            return;
+        } else {
+            document.getElementById("ratingError").style.display = "none";
+        }
+
+        const weights = {
+            savings: rating_savings / totalRatings,
+            investments: rating_investments / totalRatings,
+            discretionary: rating_discretionary_expenses / totalRatings
+        };
+
+        const lpResult = optimizePersonalFinancesLP(income, fixed_expenses, min_savings_goal, min_investment_goal, discretionary_expense_limit, net_worth, weights);
+
+        if (lpResult.status === glpk.GLP_OPT) {
+            document.getElementById("savingsResult").innerText = lpResult.savings.toFixed(2);
+            document.getElementById("investmentResult").innerText = lpResult.investments.toFixed(2);
+            document.getElementById("discretionaryResult").innerText = lpResult.discretionary.toFixed(2);
+            document.getElementById("results").style.display = "block";
+        } else {
+            alert("Unable to find an optimal solution. Please check your input values.");
+        }
+    };
+
+   function prepareLPData(income, fixed_expenses, min_savings_goal, min_investment_goal, discretionary_expense_limit, net_worth, weights) {
+    const available_budget = income - fixed_expenses;
+
+    const lpData = {
+        name: "PersonalFinanceOptimizer",
+        objective: {
+            direction: glpk.GLP_MAX,
+            name: "obj",
+            vars: [
+                { name: "savings", coef: weights.savings },
+                { name: "investments", coef: weights.investments },
+                { name: "discretionary", coef: weights.discretionary }
+            ]
+        },
+        subjectTo: [
+            {
+                name: "budget_constraint",
+                vars: [
+                    { name: "savings", coef: 1 },
+                    { name: "investments", coef: 1 },
+                    { name: "discretionary", coef: 1 }
+                ],
+                bnds: { type: glpk.GLP_UP, ub: available_budget, lb: 0 }
+            },
+            {
+                name: "min_savings_goal",
+                vars: [
+                    { name: "savings", coef: 1 }
+                ],
+                bnds: { type: glpk.GLP_LO, ub: 0, lb: min_savings_goal }
+            },
+            {
+                name: "min_investment_goal",
+                vars: [
+                    { name: "investments", coef: 1 }
+                ],
+                bnds: { type: glpk.GLP_LO, ub: 0, lb: min_investment_goal }
+            },
+            {
+                name: "discretionary_expense_limit",
+                vars: [
+                    { name: "discretionary", coef: 1 }
+                ],
+                bnds: { type: glpk.GLP_UP, ub: discretionary_expense_limit, lb: 0 }
+            }
+        ],
+        bounds: [
+            { name: "savings", type: glpk.GLP_LO, lb: 0 },
+            { name: "investments", type: glpk.GLP_LO, lb: 0 },
+            { name: "discretionary", type: glpk.GLP_LO, lb: 0 }
+        ]
+    };
+
+    return lpData;
+}
+
+    function optimizePersonalFinancesLP(income, fixed_expenses, min_savings_goal, min_investment_goal, discretionary_expense_limit, net_worth, weights) {
+    const lpData = prepareLPData(income, fixed_expenses, min_savings_goal, min_investment_goal, discretionary_expense_limit, net_worth, weights);
+    const lpOutput = glpk.solve(lpData, glpk.GLP_MSG_OFF);
+
+    return {
+        status: lpOutput.result.status,
+        savings: lpOutput.result.vars.savings,
+        investments: lpOutput.result.vars.investments,
+        discretionary: lpOutput.result.vars.discretionary,
+    };
+}
+
+</script>
+</body>
+</html>
